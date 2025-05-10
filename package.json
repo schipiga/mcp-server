@@ -1,0 +1,35 @@
+{
+  "name": "mcp-server",
+  "version": "0.0.1",
+  "description": "Simple MCP server with dynamic tools creation from openapi specification",
+  "type": "module",
+  "main": "dst/index.js",
+  "bin": {
+    "mcp-server": "dst/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "node dst/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/schipiga/mcp-server.git"
+  },
+  "author": "Sergei Chipiga",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/schipiga/mcp-server/issues"
+  },
+  "homepage": "https://github.com/schipiga/mcp-server#readme",
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.1",
+    "@types/lodash": "^4.17.16",
+    "change-case": "^5.4.4",
+    "lodash": "^4.17.21",
+    "yaml": "^2.7.1"
+  }
+}
