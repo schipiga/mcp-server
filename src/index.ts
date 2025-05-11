@@ -11,37 +11,65 @@ import * as changeCase from "change-case";
 import _ from "lodash";
 
 const SPEC_URLS = {
-    v1: 'https://developers.pipedrive.com/docs/api/v1/openapi.yaml',
-    v2: 'https://developers.pipedrive.com/docs/api/v1/openapi-v2.yaml'
+    v1: "https://developers.pipedrive.com/docs/api/v1/openapi.yaml",
+    v2: "https://developers.pipedrive.com/docs/api/v1/openapi-v2.yaml",
 };
 
-const contentTypes = [
-    'application/json',
-    'multipart/form-data',
-    'application/x-www-form-urlencoded',  
+const CONTENT_TYPES = [
+    "application/json",
+    "multipart/form-data",
+    "application/x-www-form-urlencoded",  
 ];
 
-async function runServer() {
-    const authToken = String(process.env.PIPEDRIVE_API_KEY);
+type ApiCall = {
+    apiUrl: string,
+    path: string,
+    method: string,
+    pathParams: string[],
+    contentType: string,
+};
 
-    const server = new Server({
-        name: "Pipedrive",
-        version: "0.0.1",
-    }, {
-        capabilities: {
-            tools: {},
-        }
-    });
+const apiCall = ({ apiUrl, path, method, pathParams, contentType }: ApiCall) => async (options: any) => {
+    const queryOptions = _.omit(options, ["requestBody", ...pathParams ]);
 
+    let urlPath = `${apiUrl}${path}`;
+
+    for (const pathParam of pathParams) {
+        urlPath = urlPath.replace(`{${pathParam}}`, options[pathParam]);
+    }
+
+    const url = new URL(urlPath);
+
+    for (const [ key, val ] of Object.entries(queryOptions)) {
+        url.searchParams.append(key, val as unknown as string);
+    }
+
+    url.searchParams.append("api_token", String(process.env.PIPEDRIVE_API_KEY));
+
+    const fetchOptions = {
+        body: !_.isEmpty(options.requestBody) ? JSON.stringify(options.requestBody) : undefined,
+        method: method.toLowerCase(),
+        headers: { Accept: "application/json", "Content-Type": contentType },
+    };
+
+    const response = await fetch(url.toString(), fetchOptions);
+    const data = await response.text();
+
+    return {
+        content: [{ type: "text", text: data }],
+    };
+}
+
+const parseOpenApi = async () => {
     const tools: any[] = [];
-    const options: any = {};
+    const apiCallOptions: any = {};
 
     for (const [ version, url ] of Object.entries(SPEC_URLS)) {
         const openApi = parse(await (await fetch(url)).text());
         const apiUrl = openApi.servers?.find((server: any) => server?.url)?.url;
 
         for (const [ path, methods ] of Object.entries(openApi.paths)) {
-            for (const [ method, details ] of Object.entries(methods as unknown as { [_: string]: any; })) {
+            for (const [ method, details ] of Object.entries(methods as unknown as { [s: string]: any; })) {
                 let contentType = 'application/json';
                 const pathParams: string[] = [];
 
@@ -54,7 +82,7 @@ async function runServer() {
                 if (details.requestBody) {
                     let schema;
 
-                    for (const conType of contentTypes) {
+                    for (const conType of CONTENT_TYPES) {
                         schema = details.requestBody.content[conType]?.schema;
                         if (schema) {
                             contentType = conType;
@@ -89,43 +117,25 @@ async function runServer() {
                     inputSchema, 
                 });
 
-                options[`${version}_${changeCase.snakeCase(details.operationId)}`] = {apiUrl, path, method, pathParams, contentType};
+                apiCallOptions[`${version}_${changeCase.snakeCase(details.operationId)}`] = {apiUrl, path, method, pathParams, contentType};
             }
         }
     }
 
-    const apiCall = ({ apiUrl, path, method, pathParams, contentType }: { apiUrl: string, path: string, method: string, pathParams: string[], contentType: string }) => async (opts: any) => {
-        const reqOpts = { ...opts };
-        delete reqOpts.requestBody;
+    return { tools, apiCallOptions };
+}
 
-        let urlPath = `${apiUrl}${path}`;
-
-        for (const pathParam of pathParams) {
-            urlPath = urlPath.replace(`{${pathParam}}`, opts[pathParam]);
-            delete reqOpts[pathParam];
+async function runServer() {
+    const server = new Server({
+        name: "Pipedrive",
+        version: "0.0.1",
+    }, {
+        capabilities: {
+            tools: {},
         }
+    });
 
-        const url = new URL(urlPath);
-
-        for (const [ key, val ] of Object.entries(reqOpts)) {
-            url.searchParams.append(key, val as unknown as string);
-        }
-
-        url.searchParams.append("api_token", authToken);
-
-        const options = {
-            body: !_.isEmpty(opts.requestBody) ? JSON.stringify(opts.requestBody) : undefined,
-            method: method.toLowerCase(),
-            headers: { Accept: "application/json", "Content-Type": contentType },
-        };
-
-        const response = await fetch(url.toString(), options);
-        const data = await response.text();
-
-        return {
-            content: [{ type: "text", text: data }],
-        };
-    }
+    const { tools, apiCallOptions } = await parseOpenApi();
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
         return { tools };
@@ -134,11 +144,11 @@ async function runServer() {
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
 
-        if (!options[name]) {
-            throw Error(`Tool ${name} not found`);
+        if (!apiCallOptions[name]) {
+            throw Error(`Tool '${name}' not found`);
         }
 
-        return await apiCall(options[name])(args || {});
+        return await apiCall(apiCallOptions[name])(args || {});
     });
 
     const transport = new StdioServerTransport();
