@@ -11,8 +11,8 @@ async function runClient() {
     
     await client.connect(
         new StdioClientTransport({
-            command: "node",
-            args: ["dst/index.js"],
+            command: "npx",
+            args: ["-y", "github:schipiga/mcp-server"],
             env: {
                 PIPEDRIVE_API_KEY: process.env.PIPEDRIVE_API_KEY,
                 PATH: process.env.PATH,
